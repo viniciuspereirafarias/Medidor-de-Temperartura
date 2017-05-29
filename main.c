@@ -1,0 +1,156 @@
+/**
+ * \file
+ *
+ * \brief SAM ADC Quick Start
+ *
+ * Copyright (C) 2013-2015 Atmel Corporation. All rights reserved.
+ *
+ * \asf_license_start
+ *
+ * \page License
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. The name of Atmel may not be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * 4. This software may only be redistributed and used in connection with an
+ *    Atmel microcontroller product.
+ *
+ * THIS SOFTWARE IS PROVIDED BY ATMEL "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT ARE
+ * EXPRESSLY AND SPECIFICALLY DISCLAIMED. IN NO EVENT SHALL ATMEL BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ * \asf_license_stop
+ *
+ */
+/*
+ * Support and FAQ: visit <a href="http://www.atmel.com/design-support/">Atmel Support</a>
+ */
+#include <asf.h>
+
+#include <stdio.h>
+
+struct usart_module usart_instance;
+struct usart_config usart_conf;
+
+
+void configure_rtc_count(void);
+struct rtc_module rtc_instance;
+
+void configure_adc(void);
+struct adc_module adc_instance;
+
+void configure_rtc_count(void)
+{
+	struct rtc_count_config config_rtc_count;
+
+	rtc_count_get_config_defaults(&config_rtc_count);
+
+	config_rtc_count.prescaler           = RTC_COUNT_PRESCALER_DIV_1;
+	config_rtc_count.mode                = RTC_COUNT_MODE_16BIT;
+	#ifdef FEATURE_RTC_CONTINUOUSLY_UPDATED
+	config_rtc_count.continuously_update = true;
+	#endif
+	config_rtc_count.compare_values[0]   = 1000;
+	rtc_count_init(&rtc_instance, RTC, &config_rtc_count);
+	rtc_count_enable(&rtc_instance);
+}
+
+void configure_adc(void)
+{
+	struct adc_config config_adc;
+	adc_get_config_defaults(&config_adc);
+	adc_init(&adc_instance, ADC, &config_adc);
+	adc_enable(&adc_instance);
+}
+
+
+
+int main (void)
+{
+	typedef enum State {Init = 1, le_sensor, calcula_media, mostra_display, ocioso} estado;
+	estado estado_atual = Init;
+	float temperatura_atual;
+	uint16_t conversao_temperatura;
+	
+	system_init();
+
+	usart_get_config_defaults(&usart_conf);
+	usart_conf.baudrate    = 9600;
+	usart_conf.mux_setting = EDBG_CDC_SERCOM_MUX_SETTING;
+	usart_conf.pinmux_pad0 = EDBG_CDC_SERCOM_PINMUX_PAD0;
+	usart_conf.pinmux_pad1 = EDBG_CDC_SERCOM_PINMUX_PAD1;
+	usart_conf.pinmux_pad2 = EDBG_CDC_SERCOM_PINMUX_PAD2;
+	usart_conf.pinmux_pad3 = EDBG_CDC_SERCOM_PINMUX_PAD3;
+	stdio_serial_init(&usart_instance, EDBG_CDC_MODULE, &usart_conf);
+	
+	usart_enable(&usart_instance);
+	
+	/* Insert application code here, after the board has been initialized. */
+	printf("Oi !!\r\n");
+	
+	/* This skeleton code simply sets the LED to the state of the button. */
+	while (1) {
+		switch(estado_atual){
+			case Init:
+				configure_rtc_count();
+				rtc_count_set_period(&rtc_instance, 2000);
+				configure_adc();
+				printf("Estou no Init!!\r\n");
+				estado_atual = le_sensor;
+			break;
+			
+			case le_sensor:
+				// adc
+				//x = adc();
+				port_pin_toggle_output_level(LED_0_PIN); //teste
+				adc_start_conversion(&adc_instance);
+				
+				do {
+					/* Aguarda a conversao e guarda o resultado em temperatura_atual */
+				} while (adc_read(&adc_instance, &conversao_temperatura) == STATUS_BUSY); 
+				temperatura_atual = conversao_temperatura; // conversao se necessario
+				printf("Lendo do sensor !!\r\n");
+				estado_atual = calcula_media;
+			break;
+			
+			case calcula_media:
+				//calcula media, max, min e atual e grava na memoria
+				printf("Calculando media e gravando na memoria !!\r\n");
+				estado_atual = mostra_display;
+			break;
+			
+			case mostra_display:
+				//mostra no display as informa絥s media, max, min e atual
+				printf("Mostrando no display !!\r\n");
+				estado_atual = ocioso;
+			break;
+			
+			case ocioso:
+				printf("Estou ocioso por 2 segundos !!\r\n");
+				if (rtc_count_is_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0)) {
+					rtc_count_clear_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0);
+					estado_atual = le_sensor;
+				}
+			break;
+		}
+	}
+}
+
