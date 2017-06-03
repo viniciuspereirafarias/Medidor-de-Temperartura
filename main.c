@@ -47,15 +47,53 @@
 
 #include <stdio.h>
 
+#define NR_STATES 5
+#define NR_EVENTS 2
+
+#define INIT_SYSTEM 0
+#define LE_SENSOR 1
+#define CALC_MEDIA 2
+#define MOSTRA_DISPLAY 3
+#define ESPERA_TAXA 4
+
+#define MANTEM_ESTADO 0 
+#define PROXIMO_ESTADO 1
+
+typedef struct
+{
+	void (*ptrFunc) (void);
+	uint8_t NextState;
+} FSM_STATE_TABLE;
+
+//prototipos dos estados
+void init();
+void le_sensor();
+void calcula_media();
+void mostra_display();
+void ocioso();
+
+// tabela de estados
+const FSM_STATE_TABLE StateTable [NR_STATES][NR_EVENTS] =
+{
+      init, INIT_SYSTEM,                             init, LE_SENSOR, 
+      le_sensor, LE_SENSOR,                          le_sensor, CALC_MEDIA, 
+      calcula_media, CALC_MEDIA,                     calcula_media, MOSTRA_DISPLAY,   
+      mostra_display, MOSTRA_DISPLAY,                mostra_display, ESPERA_TAXA,
+      ocioso, ESPERA_TAXA,                 			 ocioso, LE_SENSOR,
+};
+
+int evento = 0;
 struct usart_module usart_instance;
 struct usart_config usart_conf;
-
 
 void configure_rtc_count(void);
 struct rtc_module rtc_instance;
 
 void configure_adc(void);
 struct adc_module adc_instance;
+
+float temperatura_atual;
+uint16_t conversao_temperatura;
 
 void configure_rtc_count(void)
 {
@@ -81,17 +119,59 @@ void configure_adc(void)
 	adc_enable(&adc_instance);
 }
 
-
-
-int main (void)
-{
-	typedef enum State {Init = 1, le_sensor, calcula_media, mostra_display, ocioso} estado;
-	estado estado_atual = Init;
-	float temperatura_atual;
-	uint16_t conversao_temperatura;
+void init(){
+	configure_rtc_count();
+	rtc_count_set_period(&rtc_instance, 2000);
+	configure_adc();
+	printf("Estou no Init!!\r\n");
 	
+	evento = PROXIMO_ESTADO;
+}
+
+void le_sensor(){
+	port_pin_toggle_output_level(LED_0_PIN); //teste
+	adc_start_conversion(&adc_instance);
+	
+	do {
+		/* Aguarda a conversao e guarda o resultado em temperatura_atual */
+	} while (adc_read(&adc_instance, &conversao_temperatura) == STATUS_BUSY); 
+	temperatura_atual = conversao_temperatura; // conversao se necessario
+	printf("Lendo do sensor !!\r\n");
+	
+	evento = PROXIMO_ESTADO;
+}
+
+void calcula_media(){
+	//calcula media, max, min e atual e grava na memoria
+	printf("Calculando media e gravando na memoria !!\r\n");
+	
+	evento = PROXIMO_ESTADO;
+}
+
+void mostra_display(){
+	//mostra no display as informa絥s media, max, min e atual
+	printf("Mostrando no display !!\r\n");
+	
+	evento = PROXIMO_ESTADO;
+}
+
+void ocioso(){
+	printf("Estou ocioso por 2 segundos !!\r\n");
+	if (rtc_count_is_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0)) {
+		rtc_count_clear_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0);
+		evento = PROXIMO_ESTADO;
+	}else{
+		evento = MANTEM_ESTADO;
+	}
+}
+
+int main (void){
+	
+	
+	// Inicializacao do sistema
 	system_init();
 
+	// Temporario
 	usart_get_config_defaults(&usart_conf);
 	usart_conf.baudrate    = 9600;
 	usart_conf.mux_setting = EDBG_CDC_SERCOM_MUX_SETTING;
@@ -103,54 +183,15 @@ int main (void)
 	
 	usart_enable(&usart_instance);
 	
-	/* Insert application code here, after the board has been initialized. */
 	printf("Oi !!\r\n");
 	
-	/* This skeleton code simply sets the LED to the state of the button. */
 	while (1) {
-		switch(estado_atual){
-			case Init:
-				configure_rtc_count();
-				rtc_count_set_period(&rtc_instance, 2000);
-				configure_adc();
-				printf("Estou no Init!!\r\n");
-				estado_atual = le_sensor;
-			break;
-			
-			case le_sensor:
-				// adc
-				//x = adc();
-				port_pin_toggle_output_level(LED_0_PIN); //teste
-				adc_start_conversion(&adc_instance);
-				
-				do {
-					/* Aguarda a conversao e guarda o resultado em temperatura_atual */
-				} while (adc_read(&adc_instance, &conversao_temperatura) == STATUS_BUSY); 
-				temperatura_atual = conversao_temperatura; // conversao se necessario
-				printf("Lendo do sensor !!\r\n");
-				estado_atual = calcula_media;
-			break;
-			
-			case calcula_media:
-				//calcula media, max, min e atual e grava na memoria
-				printf("Calculando media e gravando na memoria !!\r\n");
-				estado_atual = mostra_display;
-			break;
-			
-			case mostra_display:
-				//mostra no display as informa絥s media, max, min e atual
-				printf("Mostrando no display !!\r\n");
-				estado_atual = ocioso;
-			break;
-			
-			case ocioso:
-				printf("Estou ocioso por 2 segundos !!\r\n");
-				if (rtc_count_is_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0)) {
-					rtc_count_clear_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0);
-					estado_atual = le_sensor;
-				}
-			break;
-		}
+		uint8_t currentState = INIT_SYSTEM;
+		
+		if (StateTable[currentState][evento].ptrFunc != NULL)
+			StateTable[currentState][evento].ptrFunc();
+
+		currentState = StateTable[currentState][evento].NextState;
 	}
 }
 
