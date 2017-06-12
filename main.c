@@ -141,10 +141,9 @@ struct rtc_module rtc_instance;
 void configure_adc(void);
 struct adc_module adc_instance;
 
-float temperatura_atual;
+float temperatura_atual, temp_media = 0, temp_max = 0, temp_min = 400 ;
 uint16_t conversao_temperatura;
-
-int x, y, temp_atual = 20, temp_media = 18, temp_max = 25, temp_min = -3 ;
+int x, y; 
 char c[50];
 char mensagem [20];
 
@@ -170,6 +169,8 @@ void configure_adc(void)
 {
 	struct adc_config config_adc;
 	adc_get_config_defaults(&config_adc);
+	config_adc.resolution = ADC_RESOLUTION_12BIT; 
+	config_adc.positive_input = ADC_POSITIVE_INPUT_PIN16;
 	adc_init(&adc_instance, ADC, &config_adc);
 	adc_enable(&adc_instance);
 }
@@ -194,7 +195,7 @@ void le_sensor(){
 	do {
 		/* Aguarda a conversao e guarda o resultado em temperatura_atual */
 	} while (adc_read(&adc_instance, &conversao_temperatura) == STATUS_BUSY); 
-	temperatura_atual = conversao_temperatura; // conversao se necessario
+	temperatura_atual =  ((float)conversao_temperatura*3.3/(4096))/0.01;  // conversao se necessario
 	printf("Lendo do sensor !!\r\n");
 	
 	evento = PROXIMO_ESTADO;
@@ -203,6 +204,13 @@ void le_sensor(){
 void calcula_media(){
 	//calcula media, max, min e atual e grava na memoria
 	printf("Calculando media e gravando na memoria !!\r\n");
+	if (temperatura_atual > temp_max){
+		temp_max = temperatura_atual;
+	}else if (temperatura_atual < temp_min){
+		temp_min = temperatura_atual;
+	}
+	
+	temp_media = (temp_media + temperatura_atual) / 2;
 	
 	evento = PROXIMO_ESTADO;
 }
@@ -214,22 +222,26 @@ void mostra_display(){
 	switch (estado){ // estados para as informações mostradas no display
 		case TEMP_ATUAL:
 			strcpy(mensagem, "Temperatura  Atual:");
-			itoa (temp_atual, c, 10);						
+			itoa ((int)temperatura_atual , c, 10);
+			printf ("temp atual %d\n", (int)temperatura_atual);						
 		break;
 								
 		case TEMP_MEDIA:
 			strcpy(mensagem, "Temperatura  Media:");
-			itoa (temp_media, c, 10);
+			itoa ((int)temp_media, c, 10);
+			printf ("temp media %d\n", (int)temp_media);
 		break;
 					
 		case TEMP_MAX:
 			strcpy(mensagem, "Temperatura Maxima:");
-			itoa (temp_max, c, 10);
+			itoa ((int)temp_max, c, 10);
+			printf ("temp max %d\n", (int)temp_max);
 		break;
 					
 		case TEMP_MIN:
 			strcpy(mensagem, "Temperatura Minima:");
-			itoa (temp_min, c, 10);
+			itoa ((int)temp_min, c, 10);
+			printf ("temp min %d\n", (int)temp_min);
 		break;
 	}
 	
@@ -247,7 +259,7 @@ void mostra_display(){
 //usa o tempo entre leituras do sensor para verificar o estado dos botoes do display
 void ocioso(){
 	//static volatile int j = 0;
-	printf("Estou ocioso por 2 segundos !!\r\n");
+	//printf("Estou ocioso por 2 segundos !!\r\n");
 	if (rtc_count_is_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0)) {
 		rtc_count_clear_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0);
 		evento = PROXIMO_ESTADO;
