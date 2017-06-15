@@ -147,7 +147,65 @@ int x, y;
 char c[50];
 char mensagem [20];
 
+uint8_t page_data[EEPROM_PAGE_SIZE];
+
 enum state {TEMP_ATUAL = 0 , TEMP_MEDIA , TEMP_MAX, TEMP_MIN}estado; //estados para o mostrador do display
+	
+
+void configure_eeprom(void);
+
+//! [setup]
+void configure_eeprom(void)
+{
+	/* Setup EEPROM emulator service */
+//! [init_eeprom_service]
+	enum status_code error_code = eeprom_emulator_init();
+//! [init_eeprom_service]
+
+//! [check_init_ok]
+	if (error_code == STATUS_ERR_NO_MEMORY) {
+		while (true) {
+			/* No EEPROM section has been set in the device's fuses */
+		}
+	}
+//! [check_init_ok]
+//! [check_re-init]
+	else if (error_code != STATUS_OK) {
+		/* Erase the emulated EEPROM memory (assume it is unformatted or
+		 * irrecoverably corrupt) */
+		eeprom_emulator_erase_memory();
+		eeprom_emulator_init();
+	}
+//! [check_re-init]
+}
+
+#if (SAMD || SAMR21)
+void SYSCTRL_Handler(void)
+{
+	if (SYSCTRL->INTFLAG.reg & SYSCTRL_INTFLAG_BOD33DET) {
+		SYSCTRL->INTFLAG.reg |= SYSCTRL_INTFLAG_BOD33DET;
+		eeprom_emulator_commit_page_buffer();
+	}
+}
+#endif
+static void configure_bod(void)
+{
+#if (SAMD || SAMR21)
+	struct bod_config config_bod33;
+	bod_get_config_defaults(&config_bod33);
+	config_bod33.action = BOD_ACTION_INTERRUPT;
+	/* BOD33 threshold level is about 3.2V */
+	config_bod33.level = 48;
+	bod_set_config(BOD_BOD33, &config_bod33);
+	bod_enable(BOD_BOD33);
+
+	SYSCTRL->INTENSET.reg |= SYSCTRL_INTENCLR_BOD33DET;
+	system_interrupt_enable(SYSTEM_INTERRUPT_MODULE_SYSCTRL);
+#endif
+
+}
+//! [setup]
+
 
 void configure_rtc_count(void)
 {
@@ -183,6 +241,19 @@ void init(){
 	gfx_mono_init();
 	estado  = TEMP_MIN;
 	
+	// teste de memória
+	configure_eeprom();
+	
+	configure_bod();
+	
+	eeprom_emulator_read_page(0, page_data);
+	temperatura_atual = page_data[0];
+	
+	page_data [0] += 10; //a cada reset a temperatura é incrementada 10 unidades
+	
+	eeprom_emulator_write_page(0, page_data);
+	eeprom_emulator_commit_page_buffer();
+	
 	printf("Estou no Init!!\r\n"); //testes
 	
 	evento = PROXIMO_ESTADO;
@@ -195,7 +266,7 @@ void le_sensor(){
 	do {
 		/* Aguarda a conversao e guarda o resultado em temperatura_atual */
 	} while (adc_read(&adc_instance, &conversao_temperatura) == STATUS_BUSY); 
-	temperatura_atual =  ((float)conversao_temperatura*3.3/(4096))/0.01;  // conversao se necessario
+	//temperatura_atual =  ((float)conversao_temperatura*3.3/(4096))/0.01;  // conversao se necessario
 	printf("Lendo do sensor !!\r\n");
 	
 	evento = PROXIMO_ESTADO;
