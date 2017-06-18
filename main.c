@@ -93,18 +93,20 @@
 #include "oled1.h"
 #include <math.h>
 
-#define NR_STATES 5
-#define NR_EVENTS 3
+#define NR_STATES 6
+#define NR_EVENTS 4
 
 #define INIT_SYSTEM 0
 #define LE_SENSOR 1
 #define CALC_MEDIA 2
 #define MOSTRA_DISPLAY 3
 #define ESPERA_TAXA 4
+#define RESET_APPICATION 5
 
 #define MANTEM_ESTADO 0 
 #define PROXIMO_ESTADO 1
 #define ESTADO_ANTERIOR 2
+#define HARD_RESET 3
 
 typedef struct
 {
@@ -118,15 +120,17 @@ void le_sensor();
 void calcula_media();
 void mostra_display();
 void ocioso();
+void hard_reset();
 
 // tabela de estados
 const FSM_STATE_TABLE StateTable [NR_STATES][NR_EVENTS] =
 {
-      init, INIT_SYSTEM,                             init, LE_SENSOR,                       init, LE_SENSOR, 
-      le_sensor, LE_SENSOR,                          le_sensor, CALC_MEDIA, 				le_sensor, CALC_MEDIA, 
-      calcula_media, CALC_MEDIA,                     calcula_media, MOSTRA_DISPLAY,   		calcula_media, MOSTRA_DISPLAY,
-      mostra_display, MOSTRA_DISPLAY,                mostra_display, ESPERA_TAXA,			mostra_display, ESPERA_TAXA,
-      ocioso, ESPERA_TAXA,                 			 ocioso, LE_SENSOR,						ocioso, MOSTRA_DISPLAY,
+      init, INIT_SYSTEM,                             init, LE_SENSOR,                       init, LE_SENSOR,                      init, RESET_APPICATION, 
+      le_sensor, LE_SENSOR,                          le_sensor, CALC_MEDIA, 				le_sensor, CALC_MEDIA, 				  le_sensor, RESET_APPICATION, 
+      calcula_media, CALC_MEDIA,                     calcula_media, MOSTRA_DISPLAY,   		calcula_media, MOSTRA_DISPLAY,		  calcula_media, RESET_APPICATION,
+      mostra_display, MOSTRA_DISPLAY,                mostra_display, ESPERA_TAXA,			mostra_display, ESPERA_TAXA,		  mostra_display, RESET_APPICATION,
+      ocioso, ESPERA_TAXA,                 			 ocioso, LE_SENSOR,						ocioso, MOSTRA_DISPLAY,   			  ocioso, RESET_APPICATION,   
+	  hard_reset, INIT_SYSTEM,                       hard_reset, INIT_SYSTEM,               hard_reset, INIT_SYSTEM,              hard_reset, RESET_APPICATION,             
 };
 
 int evento = 0;
@@ -141,11 +145,12 @@ struct rtc_module rtc_instance;
 void configure_adc(void);
 struct adc_module adc_instance;
 
-float temperatura_atual, temp_media = 0, temp_max = 0, temp_min = 400 ;
+uint8_t temperatura_atual = 20, temp_media = 25, temp_max = 40, temp_min = 10 ;
 uint16_t conversao_temperatura;
 int x, y; 
 char c[50];
 char mensagem [20];
+char limpa_tela[20] = "        ";
 
 uint8_t page_data[EEPROM_PAGE_SIZE];
 
@@ -153,6 +158,31 @@ enum state {TEMP_ATUAL = 0 , TEMP_MEDIA , TEMP_MAX, TEMP_MIN}estado; //estados p
 	
 
 void configure_eeprom(void);
+
+// void configure_extint_channel(void);
+// void configure_extint_callbacks(void);
+// void extint_detection_callback(void);
+// 
+// void configure_extint_channel(void)
+// {
+// 	//! [setup_1]
+// 	struct extint_chan_conf config_extint_chan;
+// 	//! [setup_1]
+// 	//! [setup_2]
+// 	extint_chan_get_config_defaults(&config_extint_chan);
+// 	//! [setup_2]
+// 
+// 	//! [setup_3]
+// 	config_extint_chan.gpio_pin           = OLED1_BUTTON3_ID;
+// 	config_extint_chan.gpio_pin_mux       = BUTTON_0_EIC_MUX;
+// 	config_extint_chan.gpio_pin_pull      = EXTINT_PULL_UP;
+// 	config_extint_chan.detection_criteria = EXTINT_DETECT_BOTH;
+// 	//! [setup_3]
+// 	//! [setup_4]
+// 	extint_chan_set_config(BUTTON_0_EIC_LINE, &config_extint_chan);
+// 	//! [setup_4]
+// }
+
 
 //! [setup]
 void configure_eeprom(void)
@@ -173,6 +203,7 @@ void configure_eeprom(void)
 	else if (error_code != STATUS_OK) {
 		/* Erase the emulated EEPROM memory (assume it is unformatted or
 		 * irrecoverably corrupt) */
+		printf("Erro de memoria!!\n");
 		eeprom_emulator_erase_memory();
 		eeprom_emulator_init();
 	}
@@ -228,9 +259,14 @@ void configure_adc(void)
 	struct adc_config config_adc;
 	adc_get_config_defaults(&config_adc);
 	config_adc.resolution = ADC_RESOLUTION_12BIT; 
-	config_adc.positive_input = ADC_POSITIVE_INPUT_PIN16;
+	config_adc.positive_input = ADC_POSITIVE_INPUT_TEMP;
 	adc_init(&adc_instance, ADC, &config_adc);
 	adc_enable(&adc_instance);
+}
+
+void debounce(){
+	volatile uint16_t i;
+	for(i = 0; i < 30000; i++);
 }
 
 void init(){
@@ -239,20 +275,21 @@ void init(){
 	configure_adc();
 	oled1_init(&oled1);
 	gfx_mono_init();
-	estado  = TEMP_MIN;
+	estado  = TEMP_ATUAL;
 	
 	// teste de memória
 	configure_eeprom();
-	
 	configure_bod();
 	
+// 	page_data[0] = 10;
+// 	eeprom_emulator_write_page(0, page_data);
+// 	eeprom_emulator_commit_page_buffer();
+	
 	eeprom_emulator_read_page(0, page_data);
-	temperatura_atual = page_data[0];
-	
-	page_data [0] += 10; //a cada reset a temperatura é incrementada 10 unidades
-	
-	eeprom_emulator_write_page(0, page_data);
-	eeprom_emulator_commit_page_buffer();
+	temperatura_atual = page_data[0]; //a cada reset a temperatura é incrementada 10 unidades
+	temp_media = page_data[1];
+	temp_max = page_data[2];
+	temp_min = page_data[3];
 	
 	printf("Estou no Init!!\r\n"); //testes
 	
@@ -266,7 +303,8 @@ void le_sensor(){
 	do {
 		/* Aguarda a conversao e guarda o resultado em temperatura_atual */
 	} while (adc_read(&adc_instance, &conversao_temperatura) == STATUS_BUSY); 
-	//temperatura_atual =  ((float)conversao_temperatura*3.3/(4096))/0.01;  // conversao se necessario
+	printf("CONVERSAO = %d\n", conversao_temperatura);
+	temperatura_atual =  ((float)conversao_temperatura*3.3/(4096))/0.01;  // conversao se necessario
 	printf("Lendo do sensor !!\r\n");
 	
 	evento = PROXIMO_ESTADO;
@@ -282,6 +320,14 @@ void calcula_media(){
 	}
 	
 	temp_media = (temp_media + temperatura_atual) / 2;
+	
+	// gravacao na memoria fisica
+	page_data[0] = temperatura_atual;
+	page_data[1] = temp_media;
+	page_data[2] = temp_max;
+	page_data[3] = temp_min;
+	eeprom_emulator_write_page(0, page_data);
+	eeprom_emulator_commit_page_buffer();
 	
 	evento = PROXIMO_ESTADO;
 }
@@ -322,6 +368,7 @@ void mostra_display(){
 
  	x = 54;
  	y = 10;
+	gfx_mono_draw_string(limpa_tela, x, y, &sysfont);
  	gfx_mono_draw_string(c, x, y, &sysfont);
 	
 	evento = PROXIMO_ESTADO;
@@ -337,12 +384,35 @@ void ocioso(){
 	}else if(oled1_get_button_state(&oled1, OLED1_BUTTON1_ID)){
 		estado = (estado - 1) % 4;
 		evento = ESTADO_ANTERIOR;
+		debounce();
 	}else if (oled1_get_button_state(&oled1, OLED1_BUTTON3_ID)){
 		estado = (estado + 1) % 4;
 		evento = ESTADO_ANTERIOR;
+		debounce();
+	}else if (oled1_get_button_state(&oled1, OLED1_BUTTON2_ID)){
+		evento = HARD_RESET;
+		debounce();
 	}else{
 		evento = MANTEM_ESTADO;
 	}
+}
+
+void hard_reset(){
+	printf("HARD RESET DA APLICACAO\n");
+	
+	temperatura_atual = 0;
+	temp_max = 0;
+	temp_min = 255;
+	temp_media = 0;
+	
+	// zera a memoria fisica utilizada
+	page_data[0] = 0; // temperatura atual
+	page_data[1] = 0; // temperatura media
+	page_data[2] = 0; //temperatura maxima
+	page_data[3] = 255; // temperatura minima
+	eeprom_emulator_write_page(0, page_data);
+	eeprom_emulator_commit_page_buffer();
+	evento = PROXIMO_ESTADO;
 }
 
 int main (void){
