@@ -6,9 +6,10 @@
  * temperaturas maxima, minima, media e atual medidas. As temperaturas
  * medidas sao guardadas dentro da memoria EEPROM do dispositivo. Alem
  * disso, as temperaturas maxima, media, minima e atual sao exibidas em um
- * display LCD com teclado para escolha da informacao desejada. Ademais,
+ * display OLED com teclado para escolha da informacao desejada. Ademais,
  * os dados de temperatura sao enviados para o computador via interface serial.
- *
+ * Ainda, com o auxilio dos botoes do display OLED, pode-se resetar a aplicacao, 
+ * ou mudar a informacao sendo exibida em tela.
  *
  */
 
@@ -64,7 +65,7 @@
 #include <math.h>
 
 /** \file main.c
-*   \brief Arquivo principal do projeto
+*   \brief Arquivo principal do projeto com todas as funções criadas
 */
 
 /**
@@ -86,19 +87,32 @@
 
 
 /*! \def INIT_SYSTEM
-    \brief Estado responsavel pela inicializacao dos par?tros e m??os essenciais a aplica?.
+    \brief Estado responsavel pela inicializacao dos paratros e metodos essenciais a aplicacao.
+	
+	Nesse estado, sao inicializados os componentes basicos tais como ADC, RTC, OLED, EEPROM e os
+	dados sao recuperados da memoria. 
+	Apos esse estado, o sistema vai para o estado le_sensor.
+	Para mais informacoes, consulte a funcao de estado init().
 */ 
 #define INIT_SYSTEM 0
 
 
 /*! \def LE_SENSOR
-    \brief Estado que fica lendo a temperatura coletada do sensor
+    \brief Estado que fica lendo a temperatura coletada do sensor periodicamente.
+	
+	Nesse estado, o dado do sensor eh lido com o uso do ADC e uma resolucao de 16 bits.
+	Após esse estado, a aplicacao vai para o estado calcula_media.
+	Para mais informacoes, consulte a funcao de estado le_sensor().
 */ 
 #define LE_SENSOR 1
 
 
 /*! \def CALC_MEDIA
     \brief Estado que calcula a temperatura media, temperatura maxima e temperatura minima, dada a temperatura coletada pelo sensor no estado anterior.
+	
+	Nesse estado, é usado um vetor de 50 posicoes para o calculo da media dos valores.
+	Após esse estado, a aplicacao vai automaticamente para o estado mostra_display.
+	Para mais informacoes, consulte a funcao de estado calcula_media().
 */ 
 #define CALC_MEDIA 2
 
@@ -106,8 +120,9 @@
 /*! \def MOSTRA_DISPLAY
     \brief Estado que atualiza as informacoes da tela do display mostrando as informacoes.
     
-    Details: A tela ?tualizada seguindo a maquina de estados interna ao display, a qual ?ontrolada pelos bot??
-    1 e 3 do display OLED.
+    A tela eh atualizada seguindo a maquina de estados interna ao display, a qual eh controlada pelos botoes
+    1 e 3 do display OLED. Na sequencia desse estado, a aplicacao vai para o estado ocioso(ESPERA_TAXA)
+	Para mais informacoes, ver funcao de estado mostra_display.
 */ 
 #define MOSTRA_DISPLAY 3
 
@@ -115,38 +130,53 @@
 /*! \def ESPERA_TAXA
     \brief Estado que fica aguardando ate o termino de 2 segundos, quando a aplicacao lera o sensor novamente.
     
-    Details: A tela ?tualizada seguindo a maquina de estados interna ao display, a qual ?ontrolada pelos bot??
-    1 e 3 do display OLED.
+	Nesse estado, o processador fica em pooling nos botoes do display e no RTC. Se os botoes
+	1 ou 3 forem pressionados, o processador volta ao estado mostra_display para
+	atualizar a tela, com o estado da FSM modificada pelos botoes. Se o botao 2 for 
+	pressionado, o sistema entra no hard reset para reinicializacao total da aplicacao. 
+	Ainda, quando o tempo de espera termina, a aplicacao vai para o estado le_sensor novamente.
+	Para mais informacoes, consulte a funcao de estado ocioso().
+	
 */ 
 #define ESPERA_TAXA 4
 
 
 /*! \def RESET_APPICATION
     \brief Estado que reseta todas as informacoes da aplicacao, incluindo a memoria fisica.
+	
+	Nesse estado, as informacoes sobre temperatura sao resetadas e o sistema eh completamente
+	reinicializado. Desse modo, o proximo estado eh o init. 
+	Para mais informacoes consulte a funcao de estado hard_reset().
 */ 
 #define RESET_APPICATION 5
 
 
 /*! \def MANTEM_ESTADO
-    \brief Constante que ?sada como evento para a transicao para o proprio estado.
+    \brief Constante que eh usada como evento para a transicao para o proprio estado.
+	
+	O proprio estado atribui essa constante a variavel evento.
 */ 
 #define MANTEM_ESTADO 0 
 
 
 /*! \def PROXIMO_ESTADO
-    \brief Constante que ?sada como evento para a transicao para o proprio estado.
-    \brief Constante que ?sada como evento para a transicao para o proximo estado.
+    \brief Constante que eh usada como evento para a transicao para o proximo estado.
+	
+	O proprio estado atribui essa constante a variavel evento.
 */ 
 #define PROXIMO_ESTADO 1
 
 /*! \def ESTADO_ANTERIOR
-    \brief Constante que ?sada como evento para a transicao para o proximo estado.
-    \brief Constante que ?sada como evento para a transicao para o estado anterior.
+    \brief Constante que eh usada como evento para a transicao para o estado anterior.
+	
+	O proprio estado atribui essa constante a variavel evento.
 */ 
 #define ESTADO_ANTERIOR 2
 
 /*! \def HARD_RESET
-    \brief Constante que ?sada como evento para a transicao para o estado reset.
+    \brief Constante que eh usada como evento para a transicao para o estado hard_reset.
+	
+	O proprio estado atribui essa constante a variavel evento.
 */ 
 #define HARD_RESET 3
 
@@ -198,18 +228,18 @@ void hard_reset();
  /*! \struct FSM_STATE_TABLE
     \brief Estrutura usada para transicao entre estados.
 	
-	Essa estrutura guarda um par?tro para a fun? do determinado estado e um sinal para possiveis transi?s
-	desse estado para outros estados.
+	Essa estrutura guarda um parametro para a funcao do determinado estado e 
+	um sinal para possiveis transicoes desse estado para outros estados.
 */ 
 typedef struct
 {
 	/** \var ptrFunc
-	\brief ponteiro para a funcao do estado atual
+	\brief Ponteiro para a funcao do estado atual
     */
 	void (*ptrFunc) (void);
 	
 	/** \var NextState
-	\brief Variavel para transicao de estados que recebe o proximo estado
+	\brief Variavel para transicao de estados que guarda o proximo estado
     */
 	uint8_t NextState;
 } FSM_STATE_TABLE;
@@ -247,11 +277,11 @@ int evento = 0;
  */
 /** @struct usart_instance 
 \brief Estrutura usada para usar a interface serial da aplicacao*/
-struct usart_module usart_instance;
+struct usart_module usart_instance; /**< Instancia da estrutura usart_module*/
 /** @struct usart_conf 
-\brief estrutura para a configuracao do modulo usart 
+\brief Estrutura para a configuracao do modulo usart 
 para a comunicacao serial */
-struct usart_config usart_conf;
+struct usart_config usart_conf; /**< Instancia da estrutura usart_config para a configuracao da USART*/
 
 /** @} */ // fim do grupo USART
 
@@ -285,19 +315,16 @@ char c[50];
 char mensagem [20];
 
 /** \enum state
-*	\brief Enumerador para transicao entre estados internos do display OLED
+*	\brief Enumerador para transicao entre estados internos do display OLED.
+*
 *	Essa variavel controla qual sera a informacao mostrada no display OLED 
 *	por uma maquina de estados 	propria e eh mudada de acordo com os botoes do 
-*   display OLED.
+*   display OLED (botoes 1 e 3).
 */
-enum state {TEMP_ATUAL = 0 , TEMP_MEDIA , TEMP_MAX, TEMP_MIN}estado; //estados para o mostrador do display
+enum state {TEMP_ATUAL = 0 , TEMP_MEDIA , TEMP_MAX, TEMP_MIN}estado; /**< Guarda o estado para mostrar no display*/ 
 	
 
 /** @} */ // fim do grupo OLED
-/** \fn main
-	\brief Fun??o principal do programa para inicializa??es e troca de estados.   
-*/
-int main (void);
 /**
  * \defgroup RTC RTC
  * @{
@@ -309,9 +336,9 @@ int main (void);
 void configure_rtc_count(void);
 
 /** @struct rtc_instance 
-\brief estrutura responsavel pela representacao do timer criado.
+\brief Estrutura responsavel pela representacao do timer criado.
 */
-struct rtc_module rtc_instance;
+struct rtc_module rtc_instance; /**< Guarda a instancia do RTC criada*/
 
 /** @} */ // fim do grupo RTC
 
@@ -334,7 +361,7 @@ void configure_adc(void);
 /** @struct adc_instance 
 \brief Estrutura responsavel pela representacao do ADC configurado.
 */
-struct adc_module adc_instance;
+struct adc_module adc_instance; /**< Guarda a instancia do ADC configurada*/
 
 /** \fn configure_adc_callbacks
 	\brief Funcao que configura as interrupcoes para o ADC
@@ -342,7 +369,7 @@ struct adc_module adc_instance;
 void configure_adc_callbacks(void);
 
 /** \fn adc_complete_callback
-	\brief Rotina de tratamento de interrupcao que eh chamada quando o ADC termina uma conversao.
+	\brief Handler que eh chamado quando o ADC termina as conversoes
 */
 void adc_complete_callback(struct adc_module *const module);
 
@@ -404,7 +431,7 @@ uint8_t temp_max;
 uint8_t temp_min;
 
 /** \var conversao_temperatura 
-	\brief Variavel que guarda a media dos valores lidos pelo ADC
+	\brief Variavel que guarda a media dos valores lidos pelo ADC (16 bits)
 */
 uint16_t conversao_temperatura;
 
@@ -435,6 +462,10 @@ volatile uint8_t cont_buffer = 0;
 
 /** @} */ // fim do grupo TEMPERATURA_INFO
 
+/** \fn main
+	\brief Funcao principal do programa para inicializacoes e troca de estados.   
+*/
+int main (void);
 
 /** \fn adc_complete_callback
 *
@@ -486,7 +517,8 @@ void configure_adc(void)
 
 /** \fn configure_adc_callbacks
 *
-* Habilita as interrupcoes geradas pelo ADC dado o modulo inicializado anteriormente. 
+* Habilita as interrupcoes geradas pelo ADC dado o modulo 
+* inicializado anteriormente. 
 *
 */
 void configure_adc_callbacks(void)
@@ -523,7 +555,8 @@ void configure_eeprom(void)
 
 /** \fn SYSCTRL_Handler
 *
-* Interrupcao para a atualizacao da pagina na memoria nao-volatil acionada pelo BOD.
+* Interrupcao para a atualizacao da pagina na memoria nao-volatil 
+* acionada pelo BOD.
 */
 void SYSCTRL_Handler(void)
 {
@@ -536,11 +569,11 @@ void SYSCTRL_Handler(void)
 
 /** \fn configure_bod
 *	\brief Configuracao do BOD
-*	Configuracao do BOD e estabelecimento de thresholds para o uso da memoria EEPROM. 
+*	Configuracao do BOD e estabelecimento de thresholds 
+*   para o uso da memoria EEPROM. 
 */
 static void configure_bod(void)
 {
-#if (SAMD || SAMR21)
 	struct bod_config config_bod33;
 	bod_get_config_defaults(&config_bod33);
 	config_bod33.action = BOD_ACTION_INTERRUPT;
@@ -551,8 +584,6 @@ static void configure_bod(void)
 
 	SYSCTRL->INTENSET.reg |= SYSCTRL_INTENCLR_BOD33DET;
 	system_interrupt_enable(SYSTEM_INTERRUPT_MODULE_SYSCTRL);
-#endif
-
 }
 
 /** \fn configure_rtc_count
@@ -580,7 +611,8 @@ void configure_rtc_count(void)
 
 /** \fn debounce
 *	\brief Debounce para os botoes
-*	Rotina que gasta um pequeno tempo para o ajuste do debounce dos botoes do display OLED.
+*	Rotina que gasta um pequeno tempo para o ajuste do debounce dos 
+*	botoes do display OLED.
 */
 void debounce(){
 	volatile uint16_t i;
@@ -626,10 +658,13 @@ void init(){
 }
 
 /** \fn le_sensor
-*	Passa para a placa SAMR21 funcao toggle para piscar o led apenas como teste, ADC busca o buffer
-*   com o valor de temperatura e começa realizar a leitura. Entra em loop se o sinal de leirura 
-*   do ADC for sincrono, atribui para a variavel soma o valor lido em 16BITs e mostra no terminal 
-*   do arduino, converte o valor lido em graus celcius e mostra no display do OLED, gera um evento para
+*	Passa para a placa SAMR21 funcao toggle para piscar o led para sinalizar 
+* 	a medicao. Enquanto isso, o ADC faz a leitura e guarda os valores lidos 
+*	em adc_result_buffer. Nesse tempo, a aplicacao espera o termino da 
+*	conversao do ADC. Quando o ADC termina, a funcao faz a media dos 
+*	valores lidos pelo ADC e mostra no terminal serial o valor medio encontrado.
+*	Além disso, o valor medio do ADC eh convertido para uma temperatura em graus
+*	Celsius e gera-se um evento para
 *   realizar a transicao para o estado CALCULA_MEDIA. 
 */
 void le_sensor(){
@@ -650,20 +685,24 @@ void le_sensor(){
 	/* Wait for asynchronous ADC read to complete */
 	adc_read_done = false;
 	
+	// faz a media dos valores coletados pelo ADC
 	for(i = 0; i< ADC_SAMPLES; i++){
 		soma = soma + adc_result_buffer[i];
 	}
 	soma = soma/ADC_SAMPLES;
 	printf("CONVERSAO DO ADC = %d\n", soma);
 	
+	//conversao de temperatura -> 10mV/grauCelsius
 	temperatura_atual = (((float)((1.7)*soma)/65536)/0.01);
 		
 	evento = PROXIMO_ESTADO;
 }
 
 /** \fn calcula_media
-*	Pega o valor lido e coloca no buffer_temp para calcular a media de temperatura, calcula a media
-*   e grava na eeprom, memoria fisica a temperatura_atual, temp_media, temp_min e temp_max, e gera transicao 
+*	Pega o valor lido da temperatura atual e coloca no buffer_temp 
+*	para calcular a media de temperatura, entao calcula a media
+*   e grava na eeprom a temperatura_atual, temp_media, temp_min e temp_max, 
+*	e gera transicao 
 *   para o estado MOSTRA_DISPLAY.
 */
 void calcula_media(){
@@ -726,16 +765,19 @@ void calcula_media(){
 }
 
 /** \fn mostra_display
-*   Atribui a mensagem que cada um dos estados devera mostrar no display, cada estado realiza a conversao 
-*   do valor "int" lido para "char" possibilitando que este possa ser mostrado no display, define em 
-*   qual posicao do display as informacoes serao mostradas; e gera um evento para transicionar para o estado
-*   ESPERA_TAXA.
+*   Atribui a mensagem que cada um dos estados devera mostrar no display, 
+*	cada estado realiza a conversao 
+*   do valor "int" lido para "char" possibilitando que este possa ser mostrado 
+*	no display, e atualiza a tela do display com as informacoes novas.
+*   Além disso, manda as informacoes via interface serial e gera um evento 
+*	para transicionar para o estado
+*   ESPERA_TAXA(ocioso).
 */
 void mostra_display(){
 	//mostra no display as informacoes media, max, min e atual
 	printf("Mostrando no display!\r\n");
 	
-	switch (estado){ // estados para as informa?s mostradas no display
+	switch (estado){ // estados para as informacoes mostradas no display
 		case TEMP_ATUAL:
 			strcpy(mensagem, "Temperatura  Atual:");
 			itoa ((int)temperatura_atual , c, 10);
@@ -761,6 +803,7 @@ void mostra_display(){
 		break;
 	}
 	
+	//escrita no display
 	x = 0;
  	y = 0;
  	gfx_mono_draw_string(mensagem, x, y, &sysfont);
@@ -779,26 +822,27 @@ void mostra_display(){
 
 
 /** \fn ocioso
-*   Aguarda que algum dos botoes seja pressionado, caso o botao da SAMR21 seja pressionado RTC_COUNT_COMPARE_0
-*   a tela do OLED reseta, caso seja pressionado o OLED1_BUTTON1_ID, botao esquerdo do oled decrementa 
-*   o estado que muda o dado do display, caso seja pressionado o OLED1_BUTTON3_ID, botao direito do oled incrementa 
-*   o estado que muda o dado do display, caso seja pressionado OLED1_BUTTON2_ID, botao do meio do oled 
-*   muda o estado para HARD_RESET que limpa os dados armazenados ate agora na memoria, se nenhum botao for pressionado
-*   mantem o estado atual.
+*	Fica em pooling enquanto o timer nao expira e nenhum dos botoes eh pressionado.
+*   Se o botao OLED1_BUTTON1_ID ou OLED1_BUTTON3_ID for pressionado atualiza o estado
+* 	da maquina de estados para o display e retorna ao estado mostra_display.
+*	Caso seja pressionado OLED1_BUTTON2_ID, transiciona para o estado hard_reset() 
+*	que limpa os dados armazenados ate agora na 
+*	memoria.
+*	Quando o timer expirar, gera evento para a transicao para o estado le_sensor.
 */
 void ocioso(){
-	if (rtc_count_is_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0)) {
+	if (rtc_count_is_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0)) { // pooling no timer
 		rtc_count_clear_compare_match(&rtc_instance, RTC_COUNT_COMPARE_0);
 		evento = PROXIMO_ESTADO;
-	}else if(oled1_get_button_state(&oled1, OLED1_BUTTON1_ID)){
+	}else if(oled1_get_button_state(&oled1, OLED1_BUTTON1_ID)){ // pooling no botao 1
 		estado = (estado - 1) % 4;
 		evento = ESTADO_ANTERIOR;
 		debounce();
-	}else if (oled1_get_button_state(&oled1, OLED1_BUTTON3_ID)){
+	}else if (oled1_get_button_state(&oled1, OLED1_BUTTON3_ID)){ // pooling no botao 3
 		estado = (estado + 1) % 4;
 		evento = ESTADO_ANTERIOR;
 		debounce();
-	}else if (oled1_get_button_state(&oled1, OLED1_BUTTON2_ID)){
+	}else if (oled1_get_button_state(&oled1, OLED1_BUTTON2_ID)){ // pooling no botao 2
 		evento = HARD_RESET;
 		debounce();
 	}else{
@@ -809,45 +853,26 @@ void ocioso(){
 
 /** \fn hard_reset
 *   Reseta os valores de temperatura armazenados na memoria eeprom da SAMR21, zera os valores de
-*   temperatura_atual, temp_max e temp_media, atribui valor de 255 para temp_min,
+*   temperatura_atual, temp_max e temp_media, atribui valor de 255 para temp_min como 
+*	valores de inicializacao.
+*	Apos, gera evento para transicao para o estado init().
 */ 
 void hard_reset(){
 	printf("HARD RESET DA APLICACAO\n");
 	
-	/** @var temperatura_atual 
-	* temperatura atualmente medida*/ 
-	temperatura_atual = 0;
-	/** @var temp_max
-	* temperatura maxima */ 
+	// reinicializa os valores padroes 
+	temperatura_atual = 0; 
 	temp_max = 0;
-	/** @var temp_min
-	* temperatura minima*/ 
-	temp_min = 255;
-	/** @var temp_media
-	* temperatura media*/ 
+	temp_min = 255; 
 	temp_media = 0;
-	/** @var cont_buffer 
-	*contador do buffer*/ 
 	cont_buffer = 0;
-	/** @var i_buffer 
-	*inicio do buffer*/ 
 	i_buffer = 0;
-	/** @var f_buffer
-	* final do buffer*/ 
 	f_buffer = 0;
 		
 	// zera a memoria fisica utilizada
-	/** @var page_data [0]
-	* temperatura atual zera*/ 
 	page_data[0] = 0; 
-	/** @var page_data[1]
-	*temperatura media zera*/
 	page_data[1] = 0; 
-	/** @var page_data[2]
-	*temperatura maxima zera*/
 	page_data[2] = 0; 
-	/** @varpage_data[3]
-	*temperatura minima*/
 	page_data[3] = 255; 
 	
 	eeprom_emulator_write_page(0, page_data);
@@ -858,16 +883,17 @@ void hard_reset(){
 
 /** \fn main
 *	
-*	Inicializa o sistema, Usa a comunicacao serial da placa, seta os pinos da placa que serao usados na aplicacao
-*   no caso dessa aplicacao serao usados o EDBG_CDC_SERCOM_PINMUX_PAD0, EDBG_CDC_SERCOM_PINMUX_PAD1, 
-*   EDBG_CDC_SERCOM_PINMUX_PAD2, EDBG_CDC_SERCOM_PINMUX_PAD3, seta o estado para INIT_SYSTEM que e o estado inicial da aplicacao,
-*   verifica qual o estado da StateTable esta, caso seja diferente de NULL continua com a aplicacao.
+*	Inicializa o sistema, usa a comunicacao serial da placa, 
+*	seta os pinos da placa que serao usados no uso serial, nesse caso
+*	serao usados o EDBG_CDC_SERCOM_PINMUX_PAD0, 
+*	EDBG_CDC_SERCOM_PINMUX_PAD1, 
+*   EDBG_CDC_SERCOM_PINMUX_PAD2, EDBG_CDC_SERCOM_PINMUX_PAD3. 
+*	Alem disso, seta o estado inicial como INIT_SYSTEM, 
+*   e continua a transicao e troca de estados da aplicacao.
 */ 
-
-
 int main (void){	
 	/** \var currentState
-		\brief Variavel para guardar o estado atual.
+		\brief currentState eh uma variavel (local) para guardar o estado atual da aplicacao.
 	*/
 	uint8_t currentState = INIT_SYSTEM; /*!<  Guarda o estado atual da aplicacao	*/	
 
@@ -875,19 +901,16 @@ int main (void){
 	system_init();
 
 	/** Uso da comunicacao serial*/
-	/** \defgroup Pinagem_da_placa Pinos da placa para USART
-	 * @{
-	 * /
-	/** @*/ 
+	/** Configuracao do USART */
 	usart_get_config_defaults(&usart_conf);
-	usart_conf.baudrate    = 9600;
+	usart_conf.baudrate    = 9600; // baudrate
 	usart_conf.mux_setting = EDBG_CDC_SERCOM_MUX_SETTING;
 	usart_conf.pinmux_pad0 = EDBG_CDC_SERCOM_PINMUX_PAD0;
 	usart_conf.pinmux_pad1 = EDBG_CDC_SERCOM_PINMUX_PAD1;
 	usart_conf.pinmux_pad2 = EDBG_CDC_SERCOM_PINMUX_PAD2;
 	usart_conf.pinmux_pad3 = EDBG_CDC_SERCOM_PINMUX_PAD3;
 	stdio_serial_init(&usart_instance, EDBG_CDC_MODULE, &usart_conf);
-	/** @}*/
+	
 	usart_enable(&usart_instance);
 	
 	
