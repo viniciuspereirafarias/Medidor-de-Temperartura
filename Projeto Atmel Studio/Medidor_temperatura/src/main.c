@@ -340,8 +340,9 @@ void calcula_media(){
 	evento = PROXIMO_ESTADO;
 }
 
+//\fn (void) mostra_display
 void mostra_display(){
-	//mostra no display as informa?s media, max, min e atual
+	///mostra no display as informa?s media, max, min e atual
 	printf("Mostrando no display !!\r\n");
 	
 	switch (estado){ // estados para as informa?s mostradas no display
@@ -387,7 +388,7 @@ void mostra_display(){
 }
 
 
-//\fn ocioso
+//\fn (void) ocioso
 ///usa o tempo entre leituras do sensor para verificar o estado dos botoes do display
 void ocioso(){
 	
@@ -414,7 +415,7 @@ void ocioso(){
 	}
 }
 
-//\fn hard_reset 
+//\fn (void) hard_reset 
 void hard_reset(){
 	printf("HARD RESET DA APLICACAO\n");
 	
@@ -430,13 +431,13 @@ void hard_reset(){
 	/** @var temp_media
 	* temperatura media*/ 
 	temp_media = 0;
-	/** @var cont_buffer 
+	/** @var (volatile uint8_t) cont_buffer 
 	*contador do buffer*/ 
 	cont_buffer = 0;
-	/** @var i_buffer 
+	/** @var (volatile uint8_t) i_buffer 
 	*inicio do buffer*/ 
 	i_buffer = 0;
-	/** @var f_buffer
+	/** @var (volatile uint8_t) f_buffer
 	* final do buffer*/ 
 	f_buffer = 0;
 	/** @var c 
@@ -447,29 +448,29 @@ void hard_reset(){
 	 * @{
 	 * /
 	// zera a memoria fisica utilizada
-	/** @var page_data [0]
+	/** @var (uint8_t) page_data [0]
 	* temperatura atual zera*/ 
 	page_data[0] = 0; 
-	/** @var page_data[1]
+	/** @var (uint8_t) page_data[1]
 	*temperatura media zera*/
 	page_data[1] = 0; 
-	/** @var page_data[2]
+	/** @var (uint8_t) page_data[2]
 	*temperatura maxima zera*/
 	page_data[2] = 0; 
-	/** @varpage_data[3]
+	/** @var (uint8_t) page_data[3]
 	*temperatura minima*/
 	page_data[3] = 255; 
-	/** @var page_data[4] 
+	/** @var (uint8_t) page_data[4] 
 	*contador do buffer zera */
 	page_data[4] = 0; 
-	/** @var page_data[5] 
+	/** @var (uint8_t) page_data[5] 
 	*inico do buffer zera*/
 	page_data[5] = 0;
-	/** @var page_data[6] 
+	/** @var (uint8_t) page_data[6] 
 	*final do buffer zera*/
 	page_data[6] = 0;
 	
-	/** @var page_data[c] 
+	/** @var (uint8_t) page_data[c] 
 	*dados do buffer zerados*/
 	for(c = 7; c < TAM_BUFFER; c++) {
 		page_data[c] = 0;
@@ -481,7 +482,7 @@ void hard_reset(){
 	evento = PROXIMO_ESTADO;
 }
 
-//\fn main do programa
+//\fn (int) main 	do programa
 int main (void){
 	int i;
 	

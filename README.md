@@ -14,8 +14,11 @@ nesse calculo.
 
 IMPLEMENTADO:
 - Uso do display;
-- Uso da memória;
+- Uso da memória EEPROM;
 - Cálculos básicos;
-- Preparo básico para a integração com o sensor.
+- Tabela de estados;
+- Sensor integrado na placa;
+- Conversão dos valores lidos pelo sensor de bits para graus Célcius;
+- Inicio da documentação doxygen.
 
-DATA DE ATUALIZAÇÃO: 18/06/2017
+DATA DE ATUALIZAÇÃO: 27/06/2017
