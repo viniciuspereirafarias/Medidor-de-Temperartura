@@ -65,7 +65,9 @@
 #include <math.h>
 
 /** \file main.c
-*   \brief Arquivo principal do projeto com todas as funções criadas
+*   \brief Arquivo principal do projeto com todas as funÃ§Ãµes criadas
+	\author GrÃ©gory e VinÃ­cius
+	\date 28/06/2017
 */
 
 /**
@@ -101,7 +103,7 @@
     \brief Estado que fica lendo a temperatura coletada do sensor periodicamente.
 	
 	Nesse estado, o dado do sensor eh lido com o uso do ADC e uma resolucao de 16 bits.
-	Após esse estado, a aplicacao vai para o estado calcula_media.
+	ApÃ³s esse estado, a aplicacao vai para o estado calcula_media.
 	Para mais informacoes, consulte a funcao de estado le_sensor().
 */ 
 #define LE_SENSOR 1
@@ -110,8 +112,8 @@
 /*! \def CALC_MEDIA
     \brief Estado que calcula a temperatura media, temperatura maxima e temperatura minima, dada a temperatura coletada pelo sensor no estado anterior.
 	
-	Nesse estado, é usado um vetor de 50 posicoes para o calculo da media dos valores.
-	Após esse estado, a aplicacao vai automaticamente para o estado mostra_display.
+	Nesse estado, Ã© usado um vetor de 50 posicoes para o calculo da media dos valores.
+	ApÃ³s esse estado, a aplicacao vai automaticamente para o estado mostra_display.
 	Para mais informacoes, consulte a funcao de estado calcula_media().
 */ 
 #define CALC_MEDIA 2
@@ -224,9 +226,13 @@ void hard_reset();
  * \defgroup TRANSICAO_ESTADOS Transicao entre os estados da aplicacao
  * @{
  */
-
+   
  /*! \struct FSM_STATE_TABLE
     \brief Estrutura usada para transicao entre estados.
+	
+	A figura abaixo mostra as transicoes entre os estados da aplicacao.
+	\image html FSM_Medidor_Temp.png "Diagrama de transicao de estados" width=700cm
+    \image latex FSM_Medidor_Temp.eps "Diagrama de transicao de estados" width=10cm
 	
 	Essa estrutura guarda um parametro para a funcao do determinado estado e 
 	um sinal para possiveis transicoes desse estado para outros estados.
@@ -370,8 +376,9 @@ void configure_adc_callbacks(void);
 
 /** \fn adc_complete_callback
 	\brief Handler que eh chamado quando o ADC termina as conversoes
+	\param module Representa a estrutura do ADC que foi inicializada anteriormente
 */
-void adc_complete_callback(struct adc_module *const module);
+void adc_complete_callback(struct adc_module *const);
 
 /** \var adc_result_buffer
 	\brief Variavel que recebe as conversoes do ADC
@@ -474,7 +481,6 @@ int main (void);
 * Ela torna a variavel adc_read_done = true e permite que o restante do 
 * software continue executando sem problemas.
 * 
-* \param module Representa a estrutura do ADC que foi inicializada anteriormente
 *
 */
 void adc_complete_callback(struct adc_module *const module)
@@ -629,22 +635,26 @@ void debounce(){
 *   estado le_sensor eh gerado.
 */
 void init(){
-	configure_rtc_count();
-	rtc_count_set_period(&rtc_instance, 2000);
+	configure_rtc_count(); // configuracao do ADC
+	rtc_count_set_period(&rtc_instance, 2000); // tempo de 2 segundos
 	oled1_init(&oled1);
 	gfx_mono_init();
 	estado  = TEMP_ATUAL;
 	
+	// inicializacao de memoria
 	configure_eeprom();
 	configure_bod();
 	
+	// configuracao do ADC
 	configure_adc();
 	configure_adc_callbacks();
 	
+	// ativa interrupcoes
 	system_interrupt_enable_global();
 		
+	// recuperacao dos dados
 	eeprom_emulator_read_page(0, page_data);
-	temperatura_atual = page_data[0]; //a cada reset a temperatura ?ncrementada 10 unidades
+	temperatura_atual = page_data[0]; 
 	temp_media = page_data[1];
 	temp_max = page_data[2];
 	temp_min = page_data[3];
@@ -652,7 +662,7 @@ void init(){
 	i_buffer = 0;
 	f_buffer = 0;
 	
-	printf("Inicializando aplicacao!\r\n"); //testes
+	printf("Inicializando aplicacao!\r\n"); 
 	
 	evento = PROXIMO_ESTADO;
 }
@@ -663,7 +673,7 @@ void init(){
 *	em adc_result_buffer. Nesse tempo, a aplicacao espera o termino da 
 *	conversao do ADC. Quando o ADC termina, a funcao faz a media dos 
 *	valores lidos pelo ADC e mostra no terminal serial o valor medio encontrado.
-*	Além disso, o valor medio do ADC eh convertido para uma temperatura em graus
+*	AlÃ©m disso, o valor medio do ADC eh convertido para uma temperatura em graus
 *	Celsius e gera-se um evento para
 *   realizar a transicao para o estado CALCULA_MEDIA. 
 */
@@ -678,11 +688,10 @@ void le_sensor(){
 */
 	int soma = 0;
 	
-	port_pin_toggle_output_level(LED_0_PIN); //teste
+	port_pin_toggle_output_level(LED_0_PIN); // Na transicao, sinaliza evento de leitura do sensor
 	
-	adc_read_buffer_job(&adc_instance, adc_result_buffer, ADC_SAMPLES);
-	while (adc_read_done == false);
-	/* Wait for asynchronous ADC read to complete */
+	adc_read_buffer_job(&adc_instance, adc_result_buffer, ADC_SAMPLES); // requisita leitura para o ADC
+	while (adc_read_done == false); // poling enquanto dado nao pronto
 	adc_read_done = false;
 	
 	// faz a media dos valores coletados pelo ADC
@@ -737,13 +746,15 @@ void calcula_media(){
 	int i = i_buffer;
 	
 	printf("Calculando media e gravando na memoria !!\r\n");
+	
+	// computa temperatura maxima e minima
 	if (temperatura_atual > temp_max){
 		temp_max = temperatura_atual;
 	}else if (temperatura_atual < temp_min){
 		temp_min = temperatura_atual;
 	}
 
-	
+	//calcula a media
 	while (j--){
 		somatorio = buffer_temp [i] + somatorio; 
 		i = (i + 1)%TAM_BUFFER; 
@@ -751,8 +762,6 @@ void calcula_media(){
 	temp_media = somatorio/cont_buffer;
 	
 	// gravacao na memoria fisica
-	j = 0 ;
-	
 	page_data[0] = temperatura_atual;
 	page_data[1] = temp_media;
 	page_data[2] = temp_max;
@@ -769,7 +778,7 @@ void calcula_media(){
 *	cada estado realiza a conversao 
 *   do valor "int" lido para "char" possibilitando que este possa ser mostrado 
 *	no display, e atualiza a tela do display com as informacoes novas.
-*   Além disso, manda as informacoes via interface serial e gera um evento 
+*   AlÃ©m disso, manda as informacoes via interface serial e gera um evento 
 *	para transicionar para o estado
 *   ESPERA_TAXA(ocioso).
 */
@@ -777,7 +786,8 @@ void mostra_display(){
 	//mostra no display as informacoes media, max, min e atual
 	printf("Mostrando no display!\r\n");
 	
-	switch (estado){ // estados para as informacoes mostradas no display
+	// estados para as informacoes mostradas no display e na tela
+	switch (estado){ 
 		case TEMP_ATUAL:
 			strcpy(mensagem, "Temperatura  Atual:");
 			itoa ((int)temperatura_atual , c, 10);
